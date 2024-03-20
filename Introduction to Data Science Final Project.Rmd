@@ -1,0 +1,296 @@
+---
+title: "IST 687 Final Project"
+author: "SCliff Productions"
+date: "3/29/2022"
+output: html_document
+---
+As always, we will begin by importing our libraries. 
+```{r}
+#Libraries
+suppressWarnings(suppressMessages(library(tidyverse)))
+suppressWarnings(suppressMessages(library(ggplot2)))
+suppressWarnings(suppressMessages(library(moments)))
+suppressWarnings(suppressMessages(library(readxl)))
+suppressWarnings(suppressMessages(library(arules)))
+suppressWarnings(suppressMessages(library(caret)))
+suppressWarnings(suppressMessages(library(plotly)))
+```
+
+In this project we will be examining a video game sales dataset found on [Kaggle](https://www.kaggle.com/datasets/rush4ratio/video-game-sales-with-ratings)
+This will then be refered to as the main dataframe (df) from here on after. 
+
+Note: Our initial data will be imported in to "VDS" in order to preserve the original data. 
+```{r echo = FALSE}
+#Load the data
+path <- "C:\\Users\\sarac\\OneDrive\\Documents\\Syracuse\\X_COMPLETED COURSES\\Qtr 1\\IST 687 -- Introduction to Data Science\\Final Project\\Video Game Sales.csv"
+#"C:\\Users\\sarac\\OneDrive\\Documents\\Syracuse\\X_COMPLETED COURSES\Qtr 1\\IST 687 -- Introduction to Data Science\\Final Project\\Video Game Sales.csv"
+VDS <-read.csv(path, stringsAsFactors=F, na.strings=c(NA,"NA"," NA", "N/A"))
+
+db <- data.frame(VDS)
+```
+
+Let's take an initial look at our data. 
+Examine the data: 
+```{r}
+#Exploration
+str(db)
+summary(db)
+```
+From our initial look into the data we can see there are 16719 rows, 16 columns, which translates to a grand total of nearly 270,000 data points (267,504 to be exact). In this project we will only be using Our sales values and game identifiers such as name, publisher, developer, and platform. 
+Additionally, from this information a data dictionary will be provided in the write-up portion of this report. 
+
+
+
+#################################
+## PART 1: CLEANING & MUNGING  ##
+#################################
+
+
+We need to clean up the data a bit. 
+Remove non-necessity columns from the database. 
+```{r}
+colnames(db) #Note: we want to drop "other_Sales", "Critic_Score", "Critic_Count", "User_Scores", "User_Count", and "Rating" 
+db <- db[,-11:-14]
+db <- db[,-9]
+db<- db[,-11]
+head(db)
+#DO NOT RERUN THIS OR YOU WILL LOSE MORE ROWS
+```
+
+Here we are going to sort our database by year to make sure that there are no under represented years. 
+```{r}
+order <- db[order(db$Year_of_Release),]
+head(order)
+
+order <- db[order(-db$Year_of_Release),]
+head(order)
+```
+From this initial viewing of the data frame it becomes apparent that there is only one game recorded for 2020, and a handful for 2017. This could skew our data down the road so we will remove those rows now. 
+
+Note: The 2017 rows are all also missing data and thusly will be removed when we munge our data of missing values. We don't need to drop them now, just the 2020 record. 
+
+Drop 2020 record: 
+```{r}
+db <- db[-5937,]
+```
+Poof, just like that it's gone. 
+
+
+Now we will move on to dealing with NA values in our columns. 
+Remove NA values from our dataframe. 
+```{r}
+db <- na.omit(db)
+```
+This brings our total observations down to 16418 (about 200 less). 
+
+Unfortunately we still have empty cell's in our data. We want to exclude these rows so not to mess with or data. 
+
+```{r}
+db <- db %>% na_if("")
+db <- na.omit(db)  #Note, after assigning our blank cells as NA's we will have to run the na.omit() function again. 
+str(db)
+```
+After completing this out data is pretty much cleaned up. Our attributes are the correct data type. Our columns have been culled down to the necessities. Most importantly our NA's and blank cell's have been removed, so now we have complete data. 
+
+All of this leaves us with a grand total of 9903 observations of 10 different variables, or roughly 99,000 data points.
+
+
+
+
+###########################################################
+## PART 2: PRELIMINARY ANALYSIS & DESCRIPTIVE STATISTICS ##
+###########################################################
+
+
+
+
+Define the range in global sales. What is the Min? What is the Max? 
+How does it compare to the range for sales in North America, Japan, Europe? 
+```{r}
+range(db$Global_Sales)
+
+range(db$NA_Sales)
+range(db$EU_Sales)
+range(db$JP_Sales)
+```
+Category: 
+Global Sales: Min = ~10K, Max = 82.53 million
+North America Sales: Min = ~0K, Max = 41.36 million
+European Sales: Min = ~0K, Max = 28.96 million
+Japanese Sales: Min = ~0K, Max = 6.5 million
+
+Does this then mean that the North American video game market is the largest and should be advertised most heavily too?
+Compare the sum of sales for each region and compare to the global sum in sales. 
+```{r}
+sum(db$Global_Sales)
+sum(db$NA_Sales)
+sum(db$EU_Sales)
+sum(db$JP_Sales)
+```
+Of the massive $6 trillion made off of video games between 1985 and 2016, 3.1 trillion came from the North American market alone. In comparison the European market and Japanese markets combined still do not surmount to the total of the North American market, making it the largest consumer of video games in terms of sales. 
+
+Determine the average sales amount for a game in each market.
+```{r}
+mean(db$Global_Sales)
+mean(db$NA_Sales)
+mean(db$EU_Sales)
+mean(db$JP_Sales)
+```
+These are significantly lower numbers than we would expect given our markets are in the trillions. Why could this be? Well, if we look at older games they didn't have as many sales as newer games, which makes sense because not as many people had access to, or the interest in, video games in the early 80's to even the early 2000's. 
+
+This leaves us with a problem. Do we consider theses years to be significant or not? 
+Yes, we still consider them significant because there are many games that launched in the last two decades that still barely made half a million in global sales, not unlike predesesor games. 
+
+
+What game had the lowest and highest grossing sales? Who were their publishers? 
+```{r}
+index <- which.max(db$Global_Sales)
+index
+db[1,]
+
+index2 <- which.min(db$Global_Sales)
+index2
+db[9677,]
+```
+The game with the top grossing sales is Wii Sports, published by Nintendo in 2006, bringing in a whopping $82.53 million globally. 
+Meanwhile, the lowest grossing game in our dataset is Contrast, published by Focus Home Interactive in 2013, which only brought in about $10,000 globally. 
+
+Finally we will create a variable to look at the top 10 highest grossing games in our dataset. 
+```{r}
+highestGross <- db[order(-db$Global_Sales),]
+head(highestGross, 10)
+```
+Something significant to note is that of our ten top grossing games nine are all published by Nintendo. Seven of these ten were released for the Wii Platform. Four of them were all in the same sports genre. 
+Another signigifcant thing to take notice of is that in terms og global sales only one game surpassed 
+
+
+
+
+############################
+## PART 3: VISUALIZATIONS ##
+############################
+
+
+
+
+**Create bar plot of the count of games released by year:** 
+```{r}
+ggplot(db) + aes(x=Year_of_Release) + geom_bar(fill="blue",col="black", xlab="Games Released By Year") + ggtitle("Games Released By Year") +labs(y= "Number of Games", x = "Release Year")
+```
+It seems fairly obvious that more games would be released more recently but we actually see the stoop of the bell curve closer to the late 2000's, the peak residing in 2008 then drastically falling off past 2011. It does make you wonder about how well the games released past then were recorded. 
+
+**Create a Graph that displays what console has the most games. **
+```{r}
+ggplot(db) + aes(x=Platform) + geom_bar(fill="blue",col="black") + ggtitle("Platform Game Count") + labs(y= "Number of Games", x = "Platform")
+```
+it would appear as though as of 2016 the platform with the most games is the PS2, reaching nearly 1500 titles available for the platform. 
+
+
+**Now, let's look at the global sales by platform**. 
+```{r}
+ggplot(db) + aes(x=Platform, y=Global_Sales) + geom_col(fill="red",col="black") + ggtitle("Platform Global Sales") +labs(y= "Global Sales", x = "Platform")
+```
+Interestingly enough, while the Xbox360 did not have the most games it was the second highest leader in global sales. Meanwhile, Nintendo's DS platform had the second highest count of available games but it came in fifth for global sales. 
+
+
+**Create a graph of the top ten highest grossing games and set the fill color to represent the North American Sales**
+```{r}
+topGrossGames <- data.frame(head(highestGross, 10))
+ggplot(topGrossGames) + aes(x=Name, y=Global_Sales, fill=NA_Sales) + geom_col() + ggtitle("Highest Grossing Games") + theme(axis.text.x =element_text(angle=90)) +labs(y= "Global Sales", x = "Highest Grossing Games", fill = "North American Sales")
+```
+While we have already looked at the top grossing games this is just a good visualization of the data and it shows easily how much of those sales can be attributed to the North American market based off the color of each bar.  
+
+
+
+**Create an Interactive scatter plot of the global sales in correlation to release year, color them with the North American sales.** 
+```{r}
+plot <- ggplot(db, aes(x=Year_of_Release, y=Global_Sales, color=NA_Sales)) + geom_point() + ggtitle("Global Sales By Year of Release") +labs(y= "Global Sales", x = "Year of Release", fill = "North American Sales")
+
+ggplotly(plot)
+```
+
+
+
+#################################
+## PART 4: MODELING TECHNIQUES ##
+#################################
+
+
+
+Start our modeling analysis with a simple plot of global sales over the years
+```{r}
+plot(db$Year_of_Release, db$Global_Sales)
+plot(db$Year_of_Release, db$NA_Sales)
+plot(db$Year_of_Release, db$EU_Sales)
+plot(db$Year_of_Release, db$JP_Sales)
+```
+To note: All these graphics have different y-scales so it can be deceiving to look at. Again, it shows that North America is consistently the leading consumer over Europe and Japan. The nice thing about this graphic though is it seems to indicate no matter where you are globally the boom in video game sales really seems to have started around 1996. 
+
+
+Create a more realistic model, using the sales of Japan, Europe, and North America to determine global sales. 
+```{r}
+model2 <- lm(formula=Global_Sales ~ NA_Sales + EU_Sales + JP_Sales, data=db)
+summary(model2)
+```
+Our new model has dropped the impact of North American sales down to 1.115360 and now tells us European sales have a coefficient of 1.141447, and Japanese sales have coefficient of 1.014334. All of these values have significant p-values, indicating they are worthy of inclusion, however it is somewhat counter intuitive that the North American market has less impact than  Europe does on global sales. 
+
+Our Adjusted R-squared value is also very high, 0.9918, giving us a good indication that our selected variables play a very important role in the calculation of our global sales totals. This makes sense as our variables plus one other that's not included in this data set, are just added together to create the total global sales. 
+
+
+Create a plot for each geographical region displaying their contribution to global sales. Make sure each has a line of best fit. 
+```{r}
+plot(db$NA_Sales, db$Global_Sales) + abline(model2) 
+plot(db$EU_Sales, db$Global_Sales) + abline(model2) 
+plot(db$JP_Sales, db$Global_Sales) + abline(model2) 
+```
+
+Create a Linear Model of global sales based off the sales of the North American Market. 
+```{r}
+model1 <- lm(formula=Global_Sales ~ NA_Sales, data=db)
+summary(model1)
+```
+Our linear model predicts that for every million dollars the game makes in North American markets, it will make and additional 1.935711 million in the rest of the world. So, for Example, if you made 10 million in North America for the game "Gom" you would then expect to be making around 19 million dollars in the remaining markets, givinmg you a global sales of right around $29 million.
+
+
+
+
+#######################
+## MACHINE LEARNING: ##
+#######################
+
+
+
+Let's try our hand at running an SVM model in order to determine Global Sales. 
+```{r}
+#Start by setting the seed 
+set.seed(100)
+
+#create the train list
+trainList <- createDataPartition(y=db$Global_Sales, p=.33, list=FALSE)
+
+#create train and test data sets
+trainData <- db[trainList,]
+testData <- db[-trainList,]
+
+#Now we can run the SVM model
+svm.model<- train(Global_Sales ~ NA_Sales + EU_Sales + JP_Sales, data=trainData, method="svmRadial", trControl=trainControl(method="none"), preProcess=c("center", "scale"))
+svm.model
+```
+Note: Our support vector machine model used 3,271 samples as predictor elements. 
+
+
+Okay, so we created our model, now it's time to test it out on our remaining testData
+```{r}
+predictValues <- predict(svm.model, newdata= testData)
+#confusionMatrix(predictValues, testData$Global_Sales)
+```
+
+
+Create a k.fold SVM model in an attempt to improve our accuracy: 
+```{r}
+trctrl <- trainControl(method="repeatedcv", number=10)
+svm.model.kfold<- train(Global_Sales ~ NA_Sales + EU_Sales + JP_Sales, data=trainData, method="svmRadial", trControl=trctrl, preProcess=c("center", "scale"))
+svm.model.kfold
+```
+These machine learning models could be used to predict the global sales of new games being released. 
+Given we had not split the data into test and training, as not per the assignment requirement, we would need more data to actually test the accuracy of the SVM model in application. 
